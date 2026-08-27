@@ -67,11 +67,19 @@ export async function GET(req: NextRequest) {
                   {m.playerA} vs. {m.playerB}
                 </div>
               </div>
-              {m.dramaReasons[0] && (
-                <div style={{ display: "flex", color: CREAM, fontSize: 26, opacity: 0.75, marginLeft: 70 }}>
-                  {m.dramaReasons[0]}
-                </div>
-              )}
+              <div
+                style={{
+                  display: "flex",
+                  color: CREAM,
+                  fontSize: 26,
+                  opacity: 0.85,
+                  marginLeft: 70,
+                  gap: 16,
+                }}
+              >
+                <div style={{ display: "flex", color: ACCENT }}>★ {m.rating.toFixed(1)}/10</div>
+                <div style={{ display: "flex" }}>{m.tag}</div>
+              </div>
             </div>
           ))}
         </div>

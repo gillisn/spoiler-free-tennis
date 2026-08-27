@@ -45,21 +45,22 @@ export async function postImageToInstagram(imageUrl: string, caption: string): P
 }
 
 /**
- * Builds the caption text. Kept short and factual on purpose — no scores,
- * no times, no filler. Just what makes each match worth watching and where
- * to find the queue/order on the site.
+ * Builds the caption text. Format: header, then one line per match —
+ * rank, matchup, a 1.0-9.9 "curator's rating" (dramaScore normalized, see
+ * lib/ranking.ts), and a short tag (Match of the Day / Hot Shots / Drama).
+ * No raw "N-set match" filler, no player seeding, no watch-time/duration
+ * figure — deliberately excluded, not even the format-estimated one.
  */
 export function buildCaption(digest: DailyDigest): string {
   const lines: string[] = [];
-  lines.push(`${digest.tournament} — Top 5 to Watch`);
+  lines.push(`🎾 ${digest.tournament.toUpperCase()} — MUST-WATCH MATCHES (NO SPOILERS) 🎾`);
   lines.push("");
   digest.matches.forEach((m) => {
-    const reason = m.dramaReasons[0] ?? "";
-    lines.push(`${m.rank}. ${m.playerA} vs. ${m.playerB}${reason ? ` — ${reason}` : ""}`);
+    lines.push(`${m.rank}. ${m.playerA} vs. ${m.playerB}  ──  ⭐ ${m.rating.toFixed(1)}/10  ──  🏷 ${m.tag}`);
   });
   lines.push("");
-  lines.push("No scores. No times. Full breakdown and watch order at spoilerfreetennis.com");
+  lines.push("📲 Save & share | Full breakdown at spoilerfreetennis.com");
   lines.push("");
-  lines.push("#SpoilerFreeTennis #USOpen #Tennis");
+  lines.push(`#SpoilerFreeTennis #${digest.tournament.replace(/\s+/g, "")} #Tennis`);
   return lines.join("\n");
 }

@@ -51,15 +51,16 @@ export default async function HomePage() {
                 <h2>
                   {m.playerA} vs. {m.playerB}
                 </h2>
+                <div className="badges">
+                  <span className="rating">★ {m.rating.toFixed(1)}/10</span>
+                  <span className="tag">{m.tag}</span>
+                </div>
                 {m.dramaReasons.length > 0 && (
                   <p className="reasons">{m.dramaReasons.join(" · ")}</p>
                 )}
                 <div className="meta">
                   {m.tour === "ATP" ? "Men's" : "Women's"} singles · {m.round}
                 </div>
-                {m.suggestedStart && (
-                  <div className="watch-time">Suggested start: {m.suggestedStart}</div>
-                )}
               </div>
             </div>
           ))}
@@ -67,8 +68,8 @@ export default async function HomePage() {
       )}
 
       <footer>
-        Ranked by how the match played out — distance, tiebreaks, and comebacks come
-        first. Player seeding only breaks close ties. No result is ever shown here.
+        Ranked by how the match played out — distance, tiebreaks, and comebacks. Player
+        seeding is never part of the ranking. No result is ever shown here.
       </footer>
     </main>
   );

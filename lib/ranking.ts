@@ -3,11 +3,13 @@ import { Match, RankedMatch, SetScore, Tour } from "./types";
 // ---------------------------------------------------------------------------
 // Drama-first ranking.
 //
-// Per the site's editorial rule: how dramatic the match itself was comes
-// first (distance, tiebreaks, comebacks). Player seeding/ranking is used
-// ONLY to break near-ties, never blended into the primary score — a great
-// match between unseeded players should always be able to outrank a
-// straightforward win by the #1 seed.
+// Per the site's editorial rule: how dramatic the match itself was is ALL
+// that matters here — distance, tiebreaks, comebacks. Player seeding/ranking
+// is not used anywhere in this file, not even as a tie-breaker: quality of
+// the match decides, full stop. An upset of a top seed still surfaces
+// naturally when it belongs, because upsets of that kind are almost always
+// close, tense matches — which is exactly what this scoring already rewards
+// — not because of who the players were ranked.
 // ---------------------------------------------------------------------------
 
 const MAX_SETS: Record<Tour, number> = {
@@ -19,10 +21,6 @@ const MIN_SETS_TO_WIN: Record<Tour, number> = {
   ATP: 3,
   WTA: 2,
 };
-
-/** Matches within this many drama points of each other are treated as tied
- * and re-ordered by player prominence instead. */
-const NEAR_TIE_EPSILON = 5;
 
 function setMargin(s: SetScore): number {
   return Math.abs(s.a - s.b);
@@ -44,9 +42,10 @@ export function scoreMatch(match: Match): { score: number; reasons: string[] } {
     reasons.push(
       match.tour === "ATP" ? "Went the distance — full five sets" : "Went the distance — full three sets"
     );
-  } else if (setsPlayed > MIN_SETS_TO_WIN[match.tour]) {
-    reasons.push(`${setsPlayed}-set match`);
   }
+  // (Matches that go beyond the minimum but not the full distance still earn
+  // their distance points above — we just don't call out a bare "N-set
+  // match" as a reason on its own anymore; it read as filler, not a story.)
 
   // 2) Tiebreaks: each one is a high-drama, high-tension set. +12 each, capped.
   const tiebreakCount = match.sets.filter((s) => s.tiebreak).length;
@@ -96,7 +95,28 @@ export function scoreMatch(match: Match): { score: number; reasons: string[] } {
     reasons.push("Includes a Hot Shot");
   }
 
-  // 8) Transparency, not a penalty: a retirement means the match didn't play
+  // 8) Break points: only present for matches sourced from getTournamentDraws
+  // (see mapRawDrawsMatch in lib/rapidapi.ts) — undefined/null for anything
+  // from getTournamentResults, so this factor just contributes 0 for those,
+  // it never breaks. More break-point chances means more return-game
+  // tension; capped so one wild service game can't dominate the score.
+  // "Saved" break points (chances the server fought off) get their own
+  // smaller bonus — that's a different, "clutch" kind of drama.
+  if (match.breakPoints) {
+    const { totalFaced, totalSaved } = match.breakPoints;
+    if (totalFaced > 0) {
+      score += Math.min(totalFaced * 1.5, 20);
+      if (totalFaced >= 10) {
+        reasons.push(`${totalFaced} break points across the match`);
+      }
+    }
+    if (totalSaved >= 8) {
+      score += 10;
+      reasons.push(`${totalSaved} break points saved`);
+    }
+  }
+
+  // 9) Transparency, not a penalty: a retirement means the match didn't play
   // to its natural end, so say so rather than presenting it as a clean result.
   if (match.resultType === "retired") {
     reasons.push("Ended in retirement");
@@ -105,11 +125,28 @@ export function scoreMatch(match: Match): { score: number; reasons: string[] } {
   return { score: Math.round(score * 10) / 10, reasons };
 }
 
-/** Player prominence used ONLY as a tie-breaker. Lower seed number = more
- * prominent; unseeded players contribute ~0. */
-function prominence(match: Match): number {
-  const p = (seed: number | null) => (seed && seed > 0 ? 1 / seed : 0);
-  return p(match.seedA) + p(match.seedB);
+/**
+ * Turns the raw drama score (roughly 0-110+ in practice, unbounded in
+ * theory) into a human-friendly 1.0-9.9 rating. Never shows a flat 10.0 —
+ * reads more like a real curator's call than a suspiciously perfect score.
+ * The divisor/cap here are the only "taste" knobs; tune freely once you've
+ * seen a few real days of ratings and have a feel for where they cluster.
+ */
+function ratingOutOf10(score: number): number {
+  const raw = score / 10;
+  return Math.max(1, Math.min(9.9, Math.round(raw * 10) / 10));
+}
+
+/**
+ * One-word/short-phrase label shown next to the rating. Rank #1 is always
+ * "Match of the Day"; a match with a recorded Hot Shot (see lib/types.ts —
+ * hand-curated, see README) gets called out as such; everything else is
+ * just "Drama". Tune this rule freely — it's independent of scoring.
+ */
+function assignTag(rank: number, match: Match): string {
+  if (rank === 1) return "Match of the Day";
+  if (match.hotShot) return "Hot Shots";
+  return "Drama";
 }
 
 export function rankMatches(matches: Match[], topN = 5): RankedMatch[] {
@@ -118,25 +155,28 @@ export function rankMatches(matches: Match[], topN = 5): RankedMatch[] {
     return { match: m, score, reasons };
   });
 
-  scored.sort((x, y) => {
-    if (Math.abs(x.score - y.score) > NEAR_TIE_EPSILON) {
-      return y.score - x.score;
-    }
-    // Near-tie: fall back to player prominence.
-    return prominence(y.match) - prominence(x.match);
-  });
+  // Sorted purely by drama score. No player-seed tie-break: match quality
+  // decides, full stop — an upset already shows up here on its own merits
+  // (upsets are almost always close, tense matches, which this score
+  // already rewards), never because of who was seeded where.
+  scored.sort((x, y) => y.score - x.score);
 
   const top = scored.slice(0, topN);
   const withPacing = attachWatchPacing(top);
 
-  return withPacing.map((entry, i) => ({
-    ...entry.match,
-    dramaScore: entry.score,
-    dramaReasons: entry.reasons,
-    rank: i + 1,
-    suggestedStart: entry.suggestedStart,
-    estimatedMinutes: entry.estimatedMinutes,
-  }));
+  return withPacing.map((entry, i) => {
+    const rank = i + 1;
+    return {
+      ...entry.match,
+      dramaScore: entry.score,
+      dramaReasons: entry.reasons,
+      rank,
+      rating: ratingOutOf10(entry.score),
+      tag: assignTag(rank, entry.match),
+      suggestedStart: entry.suggestedStart,
+      estimatedMinutes: entry.estimatedMinutes,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -179,4 +219,17 @@ function formatClock(totalMinutes: number): string {
   const period = h24 >= 12 ? "PM" : "AM";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
+}
+
+/**
+ * Formats an estimated watch length (see estimateMinutes above — derived
+ * from format/tiebreak count, never a real recorded duration) as "H:MMm",
+ * e.g. 105 -> "1:45m". Used in the caption/graphic instead of a clock time
+ * so it reads as "budget this much time for it," not "it happened at X" —
+ * still no real times, same spoiler-safe rule as before, just restyled.
+ */
+export function formatWatchTime(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}:${m.toString().padStart(2, "0")}m`;
 }

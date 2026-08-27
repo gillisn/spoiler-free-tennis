@@ -23,7 +23,9 @@ export interface Match {
   round: string; // e.g. "R32", "QF", "SF", "F"
   playerA: string;
   playerB: string;
-  /** Seed/ranking, lower is more prominent. Null if unseeded/unknown. */
+  /** Seed/ranking, lower is more prominent. Null if unseeded/unknown.
+   * NOT used anywhere in lib/ranking.ts — kept only in case you want it for
+   * display (e.g. "the #3 seed") later. Match quality alone decides rank. */
   seedA: number | null;
   seedB: number | null;
   winner: "A" | "B";
@@ -35,8 +37,16 @@ export interface Match {
   /** "completed" | "retired" | "walkover" | other provider-specific values.
    * Walkovers are filtered out before this type is ever constructed (see
    * lib/rapidapi.ts) — matches with the provider's actual value are kept so
-   * a retirement can still surface, just labeled honestly. */
+   * a retirement can still surface, just labeled honestly. Not available
+   * from the Draws endpoint (see mapRawDrawsMatch) — undefined there. */
   resultType?: string;
+  /** Match-level break point totals, summed across both players. Only
+   * populated when the match came from getTournamentDraws (see
+   * mapRawDrawsMatch in lib/rapidapi.ts) — getTournamentResults doesn't
+   * return this, so it's null/undefined for matches from that endpoint.
+   * totalFaced = combined break point chances created by both players;
+   * totalSaved = totalFaced minus however many were actually converted. */
+  breakPoints?: { totalFaced: number; totalSaved: number } | null;
 }
 
 export interface RankedMatch extends Match {
@@ -44,6 +54,11 @@ export interface RankedMatch extends Match {
   dramaReasons: string[];
   /** 1 = most worth watching. */
   rank: number;
+  /** dramaScore normalized to a 1.0-9.9 "curator's rating" — see lib/ranking.ts. */
+  rating: number;
+  /** Short label shown next to the rating: "Match of the Day" (rank 1),
+   * "Hot Shots" (has a recorded Hot Shot), or "Drama" otherwise. */
+  tag: string;
   /** Suggested pacing slot for today's viewing queue, e.g. "7:00 PM". */
   suggestedStart: string;
   /** Rough estimated watch length in minutes, used only to build the queue. */

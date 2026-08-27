@@ -11,16 +11,10 @@ import { Match, Tour } from "./types";
 // string like "6-3 6-7(4) 7-6(2)", and result_type ("completed" |
 // "retired" | "walkover" | ...).
 //
-// Two things this provider does NOT return, confirmed from that same
-// response, so don't expect them without more work:
-//   - Player seeds/rankings (there's a separate "Get Tournament Seeds"
-//     endpoint you could join in later by player id — not wired up yet;
-//     seeding stays optional in the ranking model, it's only a tie-breaker).
-//   - Break-point counts or any other box-score stats. There's no
-//     per-match stats endpoint confirmed yet. Ranking already captures the
-//     same "how tense was this" signal a different way — tiebreak count,
-//     comebacks, and how close the match went to full distance — so this
-//     isn't a blocker, just an honest gap versus the original ask.
+// One thing this endpoint does NOT return, confirmed from that same
+// response: player seeds/rankings (there's a separate "Get Tournament
+// Seeds" endpoint you could join in later by player id — not wired up, and
+// not needed either, since seeding isn't used anywhere in lib/ranking.ts).
 //
 // The path below is now confirmed against the provider's own docs
 // (tennisapidoc.matchstat.com/tournaments): Get Tournament Results lives at
@@ -31,6 +25,20 @@ import { Match, Tour } from "./types";
 // endpoint's `id` field for a given row (not its `link` field, which is a
 // different cross-reference and not what these tournament/{noun}/{id}
 // endpoints expect).
+//
+// getTournamentDraws (below, mapRawDrawsMatch/getCompletedMatchesForDateViaDraws)
+// is a SEPARATE endpoint confirmed from a real 2026 EFG Swiss Open - Gstaad
+// response, and it DOES include break-point stats (breakPointsConverted /
+// breakPointsConvertedOf per player) plus a lot more box-score detail
+// (aces, first-serve %, etc.) that Results doesn't have. Its shape is
+// different enough from Results that it gets its own mapper rather than
+// reusing mapRawMatch. Crucially, it's also looked up differently: by
+// TOURNAMENT NAME + year, not by season_id — see drawsPath below. This is
+// wired up and ready, but not yet what the live cron uses (see README
+// section 7) — needs one confirmed real call for the actual US Open name
+// string before flipping the switch, since a wrong/unencoded name is
+// exactly what made an earlier direct attempt at this endpoint come back
+// blank.
 // ---------------------------------------------------------------------------
 
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "tennis-api-atp-wta-itf.p.rapidapi.com";
@@ -121,6 +129,116 @@ function mapRawMatch(raw: any, tour: Tour, tournamentLabel: string): Match | nul
   };
 }
 
+/**
+ * Draws endpoint path. Looked up by tournament NAME + year, not season_id —
+ * confirmed against the docs and a real response. Only spaces need
+ * encoding (periods/hyphens are safe raw in a URL path) — but the name has
+ * to match what the provider expects exactly (e.g. "U.S. Open - New York",
+ * not "USOpen" or "US Open" necessarily — untested for this specific event,
+ * see the file header note above).
+ */
+function drawsPath(tour: "atp" | "wta", tournamentName: string, year: number): string {
+  // encodeURIComponent already turns spaces into %20 and leaves "." and "-"
+  // alone (both unreserved), which matches what's confirmed to work.
+  return `/tennis/v2/tournament/${tour}/${encodeURIComponent(tournamentName)}/${year}/draws`;
+}
+
+/**
+ * Maps one match from getTournamentDraws's shape — quite different from
+ * getTournamentResults (see mapRawMatch above). Confirmed against a real
+ * 2026 EFG Swiss Open - Gstaad response. Key differences handled here:
+ *   - No `id` field on the match itself — built from tournamentId + roundId
+ *     + both player ids instead, which is stable and always present.
+ *   - No `match_winner` field — inferred directly from the parsed set
+ *     scores (whoever won more sets), which sidesteps the never-fully-
+ *     resolved "player1 is always the winner" ambiguity noted for Results.
+ *   - No `result_type` field — retirements aren't distinguishable here, so
+ *     resultType is left undefined for Draws-sourced matches.
+ *   - Unplayed/bye slots show up as real array entries with an empty
+ *     `result`, empty `date`, and `player2: null` — filtered out below,
+ *     same idea as filtering walkovers in mapRawMatch.
+ *   - Break points ARE here: player.stats.breakPointsConverted /
+ *     breakPointsConvertedOf, confirmed non-null for both players on every
+ *     completed match in the sample response. See lib/ranking.ts for how
+ *     this factors into the score.
+ */
+function mapRawDrawsMatch(raw: any, tour: Tour, tournamentLabel?: string): Match | null {
+  if (!raw.result || !raw.date || !raw.player1 || !raw.player2) return null;
+
+  const sets = parseResultString(raw.result);
+  if (sets.length === 0) return null;
+
+  const setsWonA = sets.filter((s) => s.a > s.b).length;
+  const setsWonB = sets.filter((s) => s.b > s.a).length;
+  const winner: "A" | "B" = setsWonA >= setsWonB ? "A" : "B";
+
+  const p1Stats = raw.player1.stats ?? {};
+  const p2Stats = raw.player2.stats ?? {};
+  const bp1Of = p1Stats.breakPointsConvertedOf;
+  const bp2Of = p2Stats.breakPointsConvertedOf;
+  const breakPoints =
+    typeof bp1Of === "number" && typeof bp2Of === "number"
+      ? {
+          totalFaced: bp1Of + bp2Of,
+          totalSaved: bp1Of + bp2Of - (p1Stats.breakPointsConverted ?? 0) - (p2Stats.breakPointsConverted ?? 0),
+        }
+      : null;
+
+  return {
+    id: `${raw.tournamentId}-${raw.roundId}-${raw.player1Id}-${raw.player2Id}`,
+    tour,
+    tournament: tournamentLabel ?? raw.tournament?.name ?? "",
+    round: `Round ${raw.roundId ?? "?"}`,
+    playerA: raw.player1.name ?? "Unknown",
+    playerB: raw.player2.name ?? "Unknown",
+    seedA: null,
+    seedB: null,
+    winner,
+    sets,
+    completedDate: String(raw.date).slice(0, 10),
+    hotShot: null,
+    resultType: undefined,
+    breakPoints,
+  };
+}
+
+export interface DrawsLookup {
+  tour: "atp" | "wta";
+  /** Exact provider tournament name, e.g. "U.S. Open - New York" — not
+   * necessarily the casual name. Confirm with a real test call first. */
+  tournamentName: string;
+  year: number;
+  tournamentLabel?: string;
+}
+
+/**
+ * Alternate to getCompletedMatchesForDate, sourced from getTournamentDraws
+ * instead of getTournamentResults — same idea (pull everything, filter by
+ * date), but via name+year lookup instead of season_id, and with break
+ * points included. Not yet used by the live cron (see README section 7) —
+ * confirm a real call works for the target tournament's exact name first.
+ */
+export async function getCompletedMatchesForDateViaDraws(
+  targetDate: string | null,
+  lookups: DrawsLookup[]
+): Promise<Match[]> {
+  const calls = lookups.map((lookup) =>
+    rapidGet(drawsPath(lookup.tour, lookup.tournamentName, lookup.year))
+      .then((data) => (data?.singles ?? []) as any[])
+      .then((rows) =>
+        rows.map((r) => mapRawDrawsMatch(r, lookup.tour === "atp" ? "ATP" : "WTA", lookup.tournamentLabel))
+      )
+      .catch((err) => {
+        console.error(`[rapidapi] Draws fetch failed for ${lookup.tour}/${lookup.tournamentName}:`, err.message);
+        return [];
+      })
+  );
+
+  const results = await Promise.all(calls);
+  const all = results.flat().filter((m): m is Match => m !== null);
+  return targetDate === null ? all : all.filter((m) => m.completedDate === targetDate);
+}
+
 export interface TournamentIds {
   /** The provider's per-year "season_id" for this tournament's ATP edition
    * (e.g. the `id` field from a Get Tournament Calendar row) — not a
@@ -142,13 +260,21 @@ export interface TournamentIds {
  * passed, this falls back to TOURNAMENT_ID_ATP / TOURNAMENT_ID_WTA env vars,
  * which is what the local dry-run script (scripts/run-daily-local.ts) uses
  * for quick testing.
+ *
+ * Pass targetDate = null to skip the date filter entirely and return every
+ * completed match found — useful for testing the mapping/pipeline against a
+ * tournament that's already fully finished (e.g. a past Wimbledon) without
+ * having to know the exact real-world date of any specific match.
  */
-export async function getCompletedMatchesForDate(targetDate: string, ids: TournamentIds = {}): Promise<Match[]> {
+export async function getCompletedMatchesForDate(
+  targetDate: string | null,
+  ids: TournamentIds = {}
+): Promise<Match[]> {
   const atpId = ids.atpTournamentId ?? process.env.TOURNAMENT_ID_ATP ?? "";
   const wtaId = ids.wtaTournamentId ?? process.env.TOURNAMENT_ID_WTA ?? "";
   const tournamentLabel = ids.tournamentLabel ?? process.env.TOURNAMENT_LABEL ?? "US Open";
 
-  const calls: Promise<Match[]>[] = [];
+  const calls: Promise<(Match | null)[]>[] = [];
 
   if (atpId) {
     calls.push(
@@ -182,8 +308,6 @@ export async function getCompletedMatchesForDate(targetDate: string, ids: Tourna
   }
 
   const results = await Promise.all(calls);
-  return results
-    .flat()
-    .filter((m): m is Match => m !== null)
-    .filter((m) => m.completedDate === targetDate);
+  const all = results.flat().filter((m): m is Match => m !== null);
+  return targetDate === null ? all : all.filter((m) => m.completedDate === targetDate);
 }

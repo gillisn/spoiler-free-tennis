@@ -112,19 +112,33 @@ without touching Supabase at all.
 
 ---
 
-## 4. Set up Instagram posting
+## 4. Instagram posting — optional
 
-You said you already have the Instagram Business account + Meta app, so:
+**This step is skippable.** The cron job saves the digest to Supabase and
+generates the graphic regardless of whether Instagram is wired up — auto-
+posting is just the last optional step. Leave `IG_BUSINESS_ACCOUNT_ID` and
+`IG_ACCESS_TOKEN` blank in `.env.local` / Vercel and the cron will skip
+Instagram entirely, returning `{ imageUrl, caption, instagramAutoPosted:
+false }` in its JSON response instead — open `imageUrl` in a browser, save
+the image, and post it yourself with the given caption. Good default for
+the trial if the Meta app setup (see below) is more friction than it's
+worth right now.
 
-1. In your Meta app, make sure it has the `instagram_business_content_publish`
-   and `instagram_business_basic` permissions and is connected to your
+**To wire up auto-posting instead:**
+
+1. In your Meta app, add the **Instagram** product (Products -> Add Product
+   -> "Instagram" tile -> choose **"Instagram API setup with Instagram
+   login"**, sometimes labeled "Business Login for Instagram"). Meta no
+   longer shows a standalone "Instagram Graph API" product by that name —
+   this is the current equivalent.
+2. Make sure it's requesting the `instagram_business_content_publish` and
+   `instagram_business_basic` permissions and is connected to your
    Instagram Business account.
-2. Generate a long-lived access token for that Instagram user (Meta's Graph
+3. Generate a long-lived access token for that Instagram user (Meta's Graph
    API Explorer, or your app's token generation flow) -> `IG_ACCESS_TOKEN`.
-3. Find your **Instagram Business Account ID** (a numeric ID, not your
+4. Find your **Instagram Business Account ID** (a numeric ID, not your
    @handle — Graph API Explorer: `GET /me?fields=id` while using that
-   token, or `GET /{your-facebook-page-id}?fields=instagram_business_account`)
-   -> `IG_BUSINESS_ACCOUNT_ID`.
+   token) -> `IG_BUSINESS_ACCOUNT_ID`.
 
 Long-lived tokens expire (~60 days) and need refreshing — Meta's docs cover
 the refresh call; worth automating later, but out of scope for the trial.
@@ -149,6 +163,13 @@ npm run rank:test
 # write to Supabase or post to Instagram. Use this to verify the field
 # mapping in lib/rapidapi.ts (see section 2 above):
 npm run run:daily -- 2026-08-25
+
+# Or, to test against a tournament that's already fully finished (so you're
+# not stuck waiting for the US Open to actually start) without needing to
+# know the exact date of any specific match, skip the date filter entirely:
+#   TOURNAMENT_ID_ATP=21337 npm run run:daily -- all
+# (21337 is the confirmed 2026 Wimbledon ATP id from earlier — swap in
+# whatever finished tournament id you want to sanity-check against.)
 
 # Run the site locally:
 npm run dev   # -> http://localhost:3000
@@ -201,25 +222,72 @@ Defined in `lib/ranking.ts`. Per your brief:
   two sets down) add significant points.
 - **A tight final set** and an on-record **Hot Shot** (see below) each add
   a smaller bonus.
-- **Seeding/ranking is not part of the score.** It only breaks near-ties —
-  two matches within 5 drama points of each other get reordered by player
-  prominence; anything further apart is decided by drama alone. That's the
-  "drama first" behavior you picked.
+- **Seeding/ranking is never used, not even as a tie-break.** Match quality
+  alone decides the order — no player-prominence fallback. An upset of a
+  top seed still shows up naturally when it belongs, because that kind of
+  upset is almost always a close, tense match, which is exactly what the
+  score above already rewards — never because of who was seeded where.
 
-All of this is one function (`scoreMatch`) with plain, commented point
-values — tune any number directly if the mix feels off after watching it
-run for a few days.
+Each ranked match also gets, purely for display (not part of the sort):
+
+- **A 1.0-9.9 rating** (`rating`) — the raw drama score above, normalized.
+  Deliberately never shows a flat 10.0. Tune the divisor/cap in
+  `ratingOutOf10()` once you've seen a few real days' worth and have a feel
+  for where they cluster.
+- **A tag** (`tag`) — "Match of the Day" for rank #1, "Hot Shots" for a
+  match with a recorded Hot Shot (see below), "Drama" otherwise. This is
+  a separate, easy-to-retune rule — edit `assignTag()` any time.
+
+Deliberately NOT shown anywhere (image, caption, or site): match length /
+estimated watch time. `suggestedStart` and `estimatedMinutes` are still
+computed internally (used to order the queue) but nothing renders them —
+removed on purpose, no "how long was it" signal at all.
+
+All of this is one function (`scoreMatch`, plus `ratingOutOf10`/`assignTag`)
+with plain, commented values — tune any number directly if the mix feels
+off after watching it run for a few days.
 
 **On Hot Shots**: confirmed not present in this provider's data (see
 section 2). `hotShot` in `lib/types.ts` is still there, wired into
-scoring and the caption, but will always be empty unless hand-curated —
-after the daily cron runs, edit the `hot_shot` column for a match directly
-in Supabase's Table Editor, then re-trigger the cron (or just accept the
-site/post already went out without it that day).
+scoring, the "Hot Shots" tag, and the caption, but will always be empty
+unless hand-curated — after the daily cron runs, edit the `hot_shot`
+column for a match directly in Supabase's Table Editor, then re-trigger
+the cron (or just accept the site/post already went out without it that
+day).
 
-**On break points**: also confirmed not present (section 2). Not wired
-into scoring at all — tiebreak count and comebacks are doing that job
-instead.
+**On break points**: wired into scoring now (`scoreMatch`, factor 8) —
+more break-point chances add points (capped), and saving 8+ in a match adds
+a "clutch" bonus with its own reason line. BUT this only applies to matches
+sourced from `getTournamentDraws`, confirmed from a real 2026 EFG Swiss
+Open - Gstaad response (`breakPointsConverted` / `breakPointsConvertedOf`
+per player, reliably non-null). The live cron still uses
+`getTournamentResults`, which doesn't have this data, so as of right now
+break points aren't actually showing up in real posts yet — the code path
+(`getCompletedMatchesForDateViaDraws` in `lib/rapidapi.ts`) is built and
+ready, it just needs one thing before it's safe to flip the cron over to
+it: **Draws is looked up by tournament NAME + year, not season_id** (e.g.
+`U.S. Open - New York`, not `21349`), and the exact string the provider
+expects for the US Open specifically hasn't been confirmed yet — an
+earlier direct attempt at this endpoint with a guessed name came back
+blank. Test it locally first:
+
+```bash
+# in .env.local:
+USE_DRAWS=1
+TOURNAMENT_NAME_ATP=U.S. Open - New York
+TOURNAMENT_YEAR=2026
+
+npm run run:daily -- all
+```
+
+If that returns real matches, swap the cron route
+(`app/api/cron/daily/route.ts`) from `getCompletedMatchesForDate` to
+`getCompletedMatchesForDateViaDraws` and you'll get break points (plus
+richer stats generally) in every future post. If it comes back empty, try
+a plainer name (`US Open`) or check the exact string via the "Get
+Tournament Available Years" lookup from section 2. Tiebreak count and
+comebacks are covering the "how tense was this" signal fine in the
+meantime, so this isn't a blocker for launch.
 
 ---
 

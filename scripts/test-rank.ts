@@ -13,7 +13,7 @@ const ranked = rankMatches(matches, 5);
 console.log(`\nRanked ${ranked.length} of ${matches.length} matches:\n`);
 ranked.forEach((m) => {
   console.log(
-    `${m.rank}. ${m.playerA} vs. ${m.playerB} — drama score ${m.dramaScore} — start ${m.suggestedStart} (~${m.estimatedMinutes} min)`
+    `${m.rank}. ${m.playerA} vs. ${m.playerB}  ──  ⭐ ${m.rating.toFixed(1)}/10  ──  🏷 ${m.tag}  ──  start ${m.suggestedStart} (~${m.estimatedMinutes} min)`
   );
   m.dramaReasons.forEach((r) => console.log(`     - ${r}`));
 });
