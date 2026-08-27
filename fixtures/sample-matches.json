@@ -1,0 +1,112 @@
+[
+  {
+    "id": "atp-1",
+    "tour": "ATP",
+    "tournament": "US Open",
+    "round": "R16",
+    "playerA": "C. Alcaraz",
+    "playerB": "A. Zverev",
+    "seedA": 1,
+    "seedB": 3,
+    "winner": "A",
+    "sets": [
+      { "a": 6, "b": 7, "tiebreak": true },
+      { "a": 4, "b": 6, "tiebreak": false },
+      { "a": 7, "b": 6, "tiebreak": true },
+      { "a": 6, "b": 3, "tiebreak": false },
+      { "a": 7, "b": 6, "tiebreak": true }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": "Alcaraz between-the-legs winner to save match point"
+  },
+  {
+    "id": "atp-2",
+    "tour": "ATP",
+    "tournament": "US Open",
+    "round": "R32",
+    "playerA": "J. Sinner",
+    "playerB": "B. Shelton",
+    "seedA": 2,
+    "seedB": 14,
+    "winner": "A",
+    "sets": [
+      { "a": 6, "b": 3, "tiebreak": false },
+      { "a": 6, "b": 4, "tiebreak": false },
+      { "a": 6, "b": 2, "tiebreak": false }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": null
+  },
+  {
+    "id": "wta-1",
+    "tour": "WTA",
+    "tournament": "US Open",
+    "round": "R16",
+    "playerA": "I. Swiatek",
+    "playerB": "Q. Zheng",
+    "seedA": 2,
+    "seedB": 8,
+    "winner": "B",
+    "sets": [
+      { "a": 4, "b": 6, "tiebreak": false },
+      { "a": 7, "b": 6, "tiebreak": true },
+      { "a": 6, "b": 7, "tiebreak": true }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": null
+  },
+  {
+    "id": "wta-2",
+    "tour": "WTA",
+    "tournament": "US Open",
+    "round": "R32",
+    "playerA": "C. Gauff",
+    "playerB": "M. Vondrousova",
+    "seedA": 3,
+    "seedB": 20,
+    "winner": "A",
+    "sets": [
+      { "a": 6, "b": 4, "tiebreak": false },
+      { "a": 6, "b": 2, "tiebreak": false }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": null
+  },
+  {
+    "id": "atp-3",
+    "tour": "ATP",
+    "tournament": "US Open",
+    "round": "R32",
+    "playerA": "N. Djokovic",
+    "playerB": "H. Rune",
+    "seedA": 5,
+    "seedB": 12,
+    "winner": "A",
+    "sets": [
+      { "a": 3, "b": 6, "tiebreak": false },
+      { "a": 2, "b": 6, "tiebreak": false },
+      { "a": 6, "b": 3, "tiebreak": false },
+      { "a": 7, "b": 5, "tiebreak": false },
+      { "a": 6, "b": 4, "tiebreak": false }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": null
+  },
+  {
+    "id": "wta-3",
+    "tour": "WTA",
+    "tournament": "US Open",
+    "round": "R64",
+    "playerA": "E. Rybakina",
+    "playerB": "D. Kasatkina",
+    "seedA": 6,
+    "seedB": 15,
+    "winner": "A",
+    "sets": [
+      { "a": 6, "b": 2, "tiebreak": false },
+      { "a": 6, "b": 1, "tiebreak": false }
+    ],
+    "completedDate": "2026-08-25",
+    "hotShot": null
+  }
+]
