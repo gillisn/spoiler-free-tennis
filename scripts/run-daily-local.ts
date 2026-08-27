@@ -18,7 +18,12 @@
 // with break points, but isn't yet what the live cron uses (README section
 // 7) — this is how you'd confirm the exact tournament name string works
 // before flipping that switch.
-import "dotenv/config";
+// NOTE: plain `dotenv/config` only auto-loads a file literally named `.env`
+// — it does NOT know about `.env.local` (that's a Next.js-specific
+// convention, not a dotenv one). Loading the path explicitly here so this
+// standalone script actually reads the same file you've been editing.
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 import { getCompletedMatchesForDate, getCompletedMatchesForDateViaDraws } from "../lib/rapidapi";
 import { rankMatches } from "../lib/ranking";
 

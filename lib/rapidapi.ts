@@ -41,14 +41,21 @@ import { Match, Tour } from "./types";
 // blank.
 // ---------------------------------------------------------------------------
 
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "tennis-api-atp-wta-itf.p.rapidapi.com";
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
-
 function resultsPath(tour: "atp" | "wta", seasonId: string): string {
   return `/tennis/v2/${tour}/tournament/results/${seasonId}`;
 }
 
 async function rapidGet(path: string): Promise<any> {
+  // Read these INSIDE the function, not at module-load time (top of file).
+  // Reason: this file gets imported before scripts/run-daily-local.ts's
+  // dotenv.config() call finishes populating process.env, so a top-level
+  // `const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY` here would have
+  // permanently captured an empty string — reading it lazily, at the
+  // moment a request is actually made, sidesteps that ordering problem
+  // entirely (and costs nothing, since this only runs a couple times/day).
+  const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "tennis-api-atp-wta-itf.p.rapidapi.com";
+  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
+
   if (!RAPIDAPI_KEY) {
     throw new Error("RAPIDAPI_KEY is not set. Add it to your environment (.env.local or Vercel project settings).");
   }
