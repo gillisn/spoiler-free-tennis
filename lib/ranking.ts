@@ -126,14 +126,30 @@ export function scoreMatch(match: Match): { score: number; reasons: string[] } {
 }
 
 /**
- * Turns the raw drama score (roughly 0-110+ in practice, unbounded in
- * theory) into a human-friendly 1.0-9.9 rating. Never shows a flat 10.0 —
- * reads more like a real curator's call than a suspiciously perfect score.
- * The divisor/cap here are the only "taste" knobs; tune freely once you've
- * seen a few real days of ratings and have a feel for where they cluster.
+ * Turns the raw drama score into a human-friendly 1.0-9.9 rating. Never
+ * shows a flat 10.0 — reads more like a real curator's call than a
+ * suspiciously perfect score.
+ *
+ * Retuned as a logistic (S-curve) instead of a flat linear divisor. The
+ * linear version (score / 10, capped at 9.9) was calibrated before break
+ * points were wired in — once those could add up to +30, a genuinely great
+ * match easily cleared the old cap and everything great looked identical
+ * (real Wimbledon test data: 4 of the top 5 matches all showed "9.9/10",
+ * with no separation between a very good match and an all-time classic).
+ *
+ * The curve below maps a raw score of ~55 to a 5.0 rating (midpoint) and
+ * spreads out around it — a below-average match scores meaningfully lower,
+ * a great one climbs toward 9.9 gradually instead of slamming into it.
+ * Hand-checked against the real Wimbledon top-5 (estimated raw scores
+ * roughly 126-171): now spreads ~9.5-9.9 instead of repeating "9.9" four
+ * times. Both knobs are pure taste — nudge `midpoint` up/down to shift
+ * where "average" sits, `steepness` up to spread scores out more, down to
+ * compress them — retune again once more real tournament days are in.
  */
 function ratingOutOf10(score: number): number {
-  const raw = score / 10;
+  const midpoint = 55; // raw drama score that maps to a 5.0 rating
+  const steepness = 25; // higher = gentler slope = more spread at the top end
+  const raw = 10 / (1 + Math.exp(-(score - midpoint) / steepness));
   return Math.max(1, Math.min(9.9, Math.round(raw * 10) / 10));
 }
 
